@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Aufgaben-Lösungen</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--text:#1c2430;--muted:#657084;--line:#dfe3ea;--accent:#2f5bea;--ok:#1a8a4a;--okbg:#e4f5ea;--bad:#c23b3b;--badbg:#fbe8e8}
+@media (prefers-color-scheme:dark){:root{--bg:#14171c;--card:#1d222a;--text:#e8ebf0;--muted:#98a2b3;--line:#2e3540;--accent:#6c8cff;--ok:#4cc27d;--okbg:#17301f;--bad:#ef7676;--badbg:#341c1c}}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--text);line-height:1.45}
+header{position:sticky;top:0;background:var(--card);border-bottom:1px solid var(--line);z-index:5}
+.wrap{max-width:860px;margin:0 auto;padding:0 16px}
+.top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:12px 0}
+h1{font-size:1.15rem;margin:0}
+nav{display:flex;gap:6px}
+nav button{border:1px solid var(--line);background:transparent;color:var(--text);padding:8px 14px;border-radius:8px;cursor:pointer;font-size:.95rem}
+nav button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.progress{padding-bottom:10px;font-size:.85rem;color:var(--muted)}
+.bar{height:6px;background:var(--line);border-radius:3px;margin-top:4px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--ok);width:0;transition:width .3s}
+main{padding:16px 0 60px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:12px}
+.card.done{border-color:var(--ok)}
+.head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px}
+.head h2{font-size:1rem;margin:0}
+.badge{font-size:.78rem;padding:2px 9px;border-radius:99px;background:var(--line);color:var(--muted);white-space:nowrap}
+.badge.ok{background:var(--okbg);color:var(--ok);font-weight:600}
+textarea,input[type=text]{width:100%;font:inherit;color:var(--text);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+textarea{min-height:70px;resize:vertical}
+.btn{border:0;background:var(--accent);color:#fff;padding:8px 14px;border-radius:8px;cursor:pointer;font:inherit;font-size:.9rem}
+.btn.ghost{background:transparent;color:var(--text);border:1px solid var(--line)}
+.btn.ok{background:var(--ok)}.btn.bad{background:var(--bad)}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px}
+.name{max-width:260px}
+.sol{border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-top:8px}
+.sol.correct{background:var(--okbg);border-color:var(--ok)}
+.sol.wrong{background:var(--badbg);border-color:var(--bad)}
+.sol.wrong .txt{text-decoration:line-through;opacity:.7}
+.txt{white-space:pre-wrap;word-break:break-word}
+.meta{font-size:.8rem;color:var(--muted);margin-top:4px}
+.empty{color:var(--muted);font-size:.9rem}
+.filter{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap}
+.tools{display:flex;gap:8px;flex-wrap:wrap;margin-top:24px}
+.toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--text);color:var(--bg);padding:8px 16px;border-radius:8px;font-size:.9rem;opacity:0;pointer-events:none;transition:opacity .2s}
+.toast.show{opacity:1}
+</style>
+</head>
+<body>
+<header><div class="wrap">
+  <div class="top">
+    <h1>Aufgaben 1–12</h1>
+    <nav>
+      <button id="t1" class="on">Lösungen eingeben</button>
+      <button id="t2">Auswerten</button>
+    </nav>
+  </div>
+  <div class="progress"><span id="pt"></span> · <span id="st"></span><div class="bar"><i id="pb"></i></div></div>
+</div></header>
+
+<main class="wrap">
+  <section id="v1"></section>
+  <section id="v2" hidden></section>
+  <div class="tools">
+    <button class="btn ghost" id="exp">Daten exportieren</button>
+    <button class="btn ghost" id="imp">Daten importieren</button>
+    <button class="btn ghost" id="clr">Alles löschen</button>
+    <input type="file" id="file" accept=".json" hidden>
+  </div>
+</main>
+<div class="toast" id="toast"></div>
+
+<script>
+// >>> Hier die Firebase-URL eintragen (siehe Anleitung), z. B. "https://mein-projekt-default-rtdb.europe-west1.firebasedatabase.app"
+const DB_URL = "https://lndm-nige-default-rtdb.europe-west1.firebasedatabase.app";
+
+const N = 12, KEY = "aufgaben-loesungen-v1";
+const REMOTE = DB_URL.trim().replace(/\/+$/, "");
+let data = load(), view = 1, filter = "all", sig = "";
+
+function load(){
+  try { const d = JSON.parse(localStorage.getItem(KEY)); if (d && d.sols) { if (REMOTE) d.sols = []; return d; } } catch(e){}
+  return { name: "", sols: [] };
+}
+function save(){ try { localStorage.setItem(KEY, JSON.stringify({ name: data.name, sols: REMOTE ? [] : data.sols })); } catch(e){ toast("Speichern nicht möglich"); } }
+
+async function api(method, path, body){
+  const r = await fetch(REMOTE + path + ".json", { method, headers: {"Content-Type":"application/json"}, body: body === undefined ? undefined : JSON.stringify(body) });
+  if (!r.ok) throw new Error(r.status);
+  return r.json();
+}
+async function remote(fn){
+  if (!REMOTE) return;
+  try { await fn(); } catch(e){ toast("Online-Speicher nicht erreichbar"); }
+  sync();
+}
+function addSol(s){ data.sols.push(s); save(); render(); remote(() => api("PUT", "/sols/" + s.id, s)); }
+function delSol(id){ data.sols = data.sols.filter(x => x.id !== id); save(); render(); remote(() => api("DELETE", "/sols/" + id)); }
+function importSols(list){
+  data.sols.push(...list); save(); render();
+  const obj = {}; list.forEach(s => obj[s.id] = s);
+  remote(() => api("PATCH", "/sols", obj));
+}
+function clearAll(){ data.sols = []; save(); render(); remote(() => api("DELETE", "/sols")); }
+
+async function sync(){
+  if (!REMOTE) return;
+  try {
+    const obj = await api("GET", "/sols") || {};
+    const list = Object.values(obj).map(s => ({ ...s, status: s.status || null })).sort((a, b) => a.time - b.time);
+    const ns = JSON.stringify(list);
+    document.getElementById("st").textContent = "● Online-Sync aktiv";
+    if (ns === sig) return;
+    sig = ns; data.sols = list;
+    const a = document.activeElement;
+    if (view === 1 && a && (a.tagName === "TEXTAREA" || a.tagName === "INPUT")) progress(); else render();
+  } catch(e){ document.getElementById("st").textContent = "⚠ Online-Speicher nicht erreichbar"; }
+}
+function toast(m){ const t = document.getElementById("toast"); t.textContent = m; t.classList.add("show"); setTimeout(()=>t.classList.remove("show"), 1800); }
+function el(tag, cls, text){ const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+const solsOf = n => data.sols.filter(s => s.task === n);
+const isDone = n => solsOf(n).some(s => s.status === "correct");
+
+function setStatus(id, status){
+  const s = data.sols.find(x => x.id === id); if (!s) return;
+  s.status = status; render(); remote(() => api("PATCH", "/sols/" + id, { status: status }));
+}
+
+function progress(){
+  const done = Array.from({length:N}, (_, i) => isDone(i+1)).filter(Boolean).length;
+  document.getElementById("pt").textContent = done + " von " + N + " Aufgaben fertig";
+  document.getElementById("pb").style.width = (done / N * 100) + "%";
+}
+
+function badge(n){
+  return isDone(n) ? el("span", "badge ok", "✓ fertig") : el("span", "badge", solsOf(n).length + " Vorschläge");
+}
+
+function renderEntry(){
+  const root = document.getElementById("v1"); root.replaceChildren();
+  const nameCard = el("div", "card");
+  const nl = el("label", "", "Dein Name (optional)");
+  const ni = el("input", "name"); ni.type = "text"; ni.value = data.name; ni.placeholder = "z. B. Anna";
+  ni.style.marginTop = "6px"; ni.style.maxWidth = "260px"; ni.style.display = "block";
+  ni.oninput = () => { data.name = ni.value; save(); };
+  nameCard.append(nl, ni); root.append(nameCard);
+
+  for (let n = 1; n <= N; n++){
+    const card = el("div", "card" + (isDone(n) ? " done" : ""));
+    const head = el("div", "head"); head.append(el("h2", "", "Aufgabe " + n), badge(n));
+    const ta = el("textarea"); ta.placeholder = "Lösung für Aufgabe " + n + " …";
+    const row = el("div", "row");
+    const b = el("button", "btn", "Lösung abschicken");
+    const mine = el("span", "meta");
+    b.onclick = () => {
+      const v = ta.value.trim(); if (!v) return toast("Bitte erst eine Lösung eingeben");
+      ta.value = "";
+      addSol({ id: Date.now().toString(36) + Math.random().toString(36).slice(2,6), task: n, text: v, author: data.name.trim() || "Anonym", status: null, time: Date.now() });
+      toast("Lösung zu Aufgabe " + n + " gespeichert");
+    };
+    row.append(b, mine);
+    const c = solsOf(n).length;
+    mine.textContent = c ? c + " Vorschlag" + (c === 1 ? "" : "e") + " gespeichert" : "";
+    card.append(head, ta, row); root.append(card);
+  }
+}
+
+function renderReview(){
+  const root = document.getElementById("v2"); root.replaceChildren();
+  const f = el("div", "filter");
+  [["all","Alle"],["open","Offen"],["done","Fertig"]].forEach(([k, label]) => {
+    const b = el("button", "btn" + (filter === k ? "" : " ghost"), label);
+    b.onclick = () => { filter = k; renderReview(); };
+    f.append(b);
+  });
+  root.append(f);
+
+  for (let n = 1; n <= N; n++){
+    if (filter === "open" && isDone(n)) continue;
+    if (filter === "done" && !isDone(n)) continue;
+    const card = el("div", "card" + (isDone(n) ? " done" : ""));
+    const head = el("div", "head"); head.append(el("h2", "", "Aufgabe " + n), badge(n));
+    card.append(head);
+    const list = solsOf(n);
+    if (!list.length) card.append(el("div", "empty", "Noch keine Lösungsvorschläge."));
+    list.forEach(s => {
+      const box = el("div", "sol" + (s.status ? " " + s.status : ""));
+      box.append(el("div", "txt", s.text));
+      box.append(el("div", "meta", s.author + " · " + new Date(s.time).toLocaleString("de-DE") + (s.status === "correct" ? " · ✓ richtig" : s.status === "wrong" ? " · ✗ falsch" : "")));
+      const row = el("div", "row");
+      if (!s.status){
+        const ok = el("button", "btn ok", "✓ Richtig"); ok.onclick = () => setStatus(s.id, "correct");
+        const bad = el("button", "btn bad", "✗ Falsch"); bad.onclick = () => setStatus(s.id, "wrong");
+        row.append(ok, bad);
+      } else {
+        const undo = el("button", "btn ghost", "↶ Rückgängig"); undo.onclick = () => setStatus(s.id, null);
+        row.append(undo);
+      }
+      const del = el("button", "btn ghost", "Löschen");
+      del.onclick = () => { if (confirm("Diesen Vorschlag löschen?"))delSol(s.id); };
+      row.append(del);
+      box.append(row); card.append(box);
+    });
+    root.append(card);
+  }
+}
+
+function render(){
+  progress();
+  document.getElementById("v1").hidden = view !== 1;
+  document.getElementById("v2").hidden = view !== 2;
+  document.getElementById("t1").classList.toggle("on", view === 1);
+  document.getElementById("t2").classList.toggle("on", view === 2);
+  // keep typed text when re-rendering the entry view
+  const typed = [...document.querySelectorAll("#v1 textarea")].map(t => t.value);
+  if (view === 1) { renderEntry(); document.querySelectorAll("#v1 textarea").forEach((t,i) => t.value = typed[i] || ""); }
+  else renderReview();
+}
+
+document.getElementById("t1").onclick = () => { view = 1; location.hash = "eingeben"; render(); };
+document.getElementById("t2").onclick = () => { view = 2; location.hash = "auswerten"; render(); };
+
+document.getElementById("exp").onclick = () => {
+  const a = el("a"); a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], {type:"application/json"}));
+  a.download = "loesungen.json"; a.click(); URL.revokeObjectURL(a.href);
+};
+document.getElementById("imp").onclick = () => document.getElementById("file").click();
+document.getElementById("file").onchange = e => {
+  const f = e.target.files[0]; if (!f) return;
+  const r = new FileReader();
+  r.onload = () => {
+    try {
+      const d = JSON.parse(r.result); if (!Array.isArray(d.sols)) throw 0;
+      const have = new Set(data.sols.map(s => s.id));
+      const fresh = d.sols.filter(s => !have.has(s.id));
+      importSols(fresh); toast("Import abgeschlossen");
+    } catch(err){ toast("Ungültige Datei"); }
+  };
+  r.readAsText(f); e.target.value = "";
+};
+document.getElementById("clr").onclick = () => {
+  if (confirm("Wirklich ALLE Lösungen und Markierungen löschen?"))clearAll();
+};
+
+if (location.hash === "#auswerten") view = 2;
+document.getElementById("st").textContent = REMOTE ? "Verbinde …" : "Nur lokal (kein Online-Speicher eingerichtet)";
+render();
+if (REMOTE){ sync(); setInterval(sync, 4000); }
+</script>
+</body>
+</html>
